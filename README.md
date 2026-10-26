@@ -21,7 +21,7 @@
 ## 📦 编译产物
 
 编译完成后，在 Actions 的 Artifacts 中可以下载：
-- `AviumUI-equuleus-YYYYMMDD.zip` — 刷机包
+- `AviumUI-[设备代号]-YYYYMMDD.zip` — 刷机包
 - `recovery.img` — Recovery 镜像
 - `boot.img` — 内核镜像
 - `build-info.txt` — 构建信息
