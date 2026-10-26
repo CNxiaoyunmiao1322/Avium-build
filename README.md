@@ -1,50 +1,22 @@
 # AviumUI equuleus 自动编译
 
-> 🤖 使用 GitHub Actions 自动编译 AviumUI (Android 16) for 小米8屏幕指纹版
+> 🤖 使用 GitHub Actions 自动编译 AviumUI
 
 ## 📱 适用设备
 
 | 项目 | 信息 |
 |------|------|
-| 设备 | 小米8屏幕指纹版 (equuleus) |
-| SoC | Qualcomm Snapdragon 845 |
-| Android | 16 (QPR2) |
+| 设备 | 小米,红米,一加 |
 | ROM | AviumUI |
 
 ## 🚀 使用方法
 
-### 方法一：Self-hosted Runner（推荐）
-
-在你自己的编译机器上运行 Runner，空间和性能都有保障：
-
-```bash
-# 1. 克隆仓库
-git clone https://github.com/huanghao680/avium-build.git
-cd avium-build
-
-# 2. 运行安装脚本
-chmod +x setup-runner.sh
-./setup-runner.sh
-
-# 3. 在 GitHub 仓库设置中添加 Runner
-# Settings → Actions → New self-hosted runner
-```
-
-### 方法二：Fork 后手动触发
+### Fork 后手动触发
 
 1. Fork 本仓库
 2. 在 Actions 页面点击 "Build AviumUI"
 3. 点击 "Run workflow" 开始编译
 4. 等待编译完成，下载产物
-
-## ⚙️ 编译配置
-
-- **编译目标**: `equuleus userdebug`
-- **源码分支**: AviumUI avium-16.2
-- **设备树**: LineageOS lineage-23.2
-- **内核**: LineageOS lineage-22.2 (SDM845)
-- **自动编译**: 每周日凌晨 2:00
-- **手动触发**: 支持完全清理重编
 
 ## 📦 编译产物
 
@@ -56,9 +28,9 @@ chmod +x setup-runner.sh
 
 ## 📋 刷入步骤
 
-1. 解锁 Bootloader（小米官网申请）
-2. 刷入 TWRP Recovery
-3. 在 TWRP 中格式化 Data 分区
+1. 解锁 Bootloader
+2. 刷入 第三方 Recovery（TWRP,AERA...）
+3. 在 Rec 中三清（必要时需要五清）
 4. 刷入编译好的 ROM 包
 5. 可选：刷入 Magisk 获取 Root
 
@@ -68,7 +40,7 @@ chmod +x setup-runner.sh
 |------|---------|---------|
 | 系统 | Ubuntu 22.04 LTS | Ubuntu 22.04 LTS |
 | 内存 | 16 GB | 32 GB+ |
-| 磁盘 | 200 GB SSD | 400 GB+ SSD |
+| 磁盘 | 300 GB SSD | 400 GB+ SSD |
 | CPU | 4 核 | 8 核+ |
 | 网络 | 稳定连接 | 高速网络（源码同步） |
 
@@ -90,15 +62,10 @@ chmod +x setup-runner.sh
 ### Q: 如何清理编译缓存？
 在 Actions 页面选择 "clean_build" 选项重新运行
 
-### Q: 如何添加 GApps？
-取消注释工作流中的 `avium get_gms` 步骤
-
 ## 🙏 致谢
 
 - [AviumUI](https://github.com/AviumUI) — ROM 开发团队
 - [LineageOS](https://lineageos.org) — 设备树和内核源码
-- [duckyduckG](https://github.com/duckyduckG) — equuleus vendor 维护
-- [niclimcy](https://github.com/niclimcy) — sdm845-common vendor 维护
 
 ---
 
