@@ -1,0 +1,306 @@
+name: Build AviumUI (fairlady)
+
+on:
+  workflow_dispatch:
+    inputs:
+      clean_build:
+        description: '完全清理后重新编译'
+        required: false
+        default: 'false'
+        type: boolean
+      oos_zip_url:
+        description: 'OnePlus 15T 官方 OOS 卡刷包直链 (用于提取 Vendor Blobs)'
+        required: true
+        type: string
+      build_type:
+        description: '构建变体'
+        required: true
+        default: 'userdebug'
+        type: choice
+        options:
+          - userdebug
+          - user
+          - eng
+      # ===== AviumUI 特殊配置 =====
+      avium_maintainer:
+        description: '维护者名称'
+        required: false
+        default: 'xiaoyunmiao1322'
+        type: string
+      avium_soc_model:
+        description: 'SoC 显示名'
+        required: false
+        default: 'Snapdragon 8 Elite Gen 5'
+        type: string
+      avium_gms:
+        description: '集成 Google 服务'
+        required: false
+        default: true
+        type: boolean
+      avium_googleime:
+        description: '安装 Google 输入法 (仅 vanilla 构建生效)'
+        required: false
+        default: false
+        type: boolean
+      avium_blur:
+        description: '强制开启模糊效果'
+        required: false
+        default: true
+        type: boolean
+      avium_spoof:
+        description: '伪装 Props'
+        required: false
+        default: true
+        type: boolean
+      avium_time_append:
+        description: '版本号附加时间'
+        required: false
+        default: true
+        type: boolean
+
+env:
+  DEVICE: fairlady
+  BRANCH: avium-16.2
+  USE_CCACHE: 1
+  CCACHE_SIZE: 55G
+  TZ: Asia/Shanghai
+
+jobs:
+  build:
+    runs-on: self-hosted
+    timeout-minutes: 720
+
+    steps:
+      - name: 环境检查
+        run: |
+          echo "=== 系统信息 ==="
+          uname -a
+          df -h /
+          free -h
+          nproc
+          FREE_GB=$(df / --output=avail -BG | tail -1 | tr -d ' G')
+          echo "可用空间: ${FREE_GB}GB"
+          if [ "$FREE_GB" -lt 500 ]; then
+            echo "⚠️ 可用空间不足500GB，编译可能失败！"
+          fi
+
+      - name: 清理旧工作区（可选）
+        if: inputs.clean_build == true
+        run: rm -rf ~/android/avium || true
+
+      - name: 安装依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison build-essential ccache curl flex g++-multilib \
+            gcc-multilib git git-lfs gnupg gperf imagemagick \
+            protobuf-compiler python3-protobuf lib32readline-dev \
+            lib32z1-dev libdw-dev libelf-dev lz4 libsdl1.2-dev \
+            libssl-dev libxml2 libxml2-utils lzop pngcrush rsync \
+            schedtool squashfs-tools xsltproc zip zlib1g-dev \
+            python3 git curl aria2
+
+      - name: 安装 repo 工具
+        run: |
+          mkdir -p ~/bin
+          if [ ! -f ~/bin/repo ]; then
+            curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
+            chmod a+x ~/bin/repo
+          fi
+          export PATH=~/bin:$PATH
+          repo --version
+
+      - name: 配置 Git & ccache
+        run: |
+          git config --global user.name "cnxiaoyunmiao1322"
+          git config --global user.email "cnxiaoyunmiao1322@163.com"
+          git lfs install
+          ccache -M ${CCACHE_SIZE}
+          ccache -z
+
+      - name: 同步 AviumUI 源码
+        working-directory: ~/android/avium
+        run: |
+          export PATH=~/bin:$PATH
+          mkdir -p ~/android/avium
+          cd ~/android/avium
+          if [ -d ".repo" ]; then
+            repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags --optimized-fetch || true
+          else
+            repo init -u https://github.com/AviumUI/android_manifests -b ${BRANCH} --git-lfs
+            repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags
+          fi
+
+      - name: 克隆 fairlady 设备树 & 内核 & 通用树
+        working-directory: ~/android/avium
+        run: |
+          if [ ! -d "device/oneplus/sm8850-common" ]; then
+            git clone https://github.com/OnePlus-SM8850-Development/android_device_oneplus_sm8850-common.git \
+              -b lineage-23.2-osskernel device/oneplus/sm8850-common
+          fi
+          if [ ! -d "device/oneplus/fairlady" ]; then
+            git clone https://github.com/OnePlus-SM8850-Development/android_device_oneplus_fairlady.git \
+              -b lineage-23.2 device/oneplus/fairlady
+          fi
+          if [ ! -d "device/oneplus/fairlady-kernel" ]; then
+            git clone https://github.com/OnePlus-SM8850-Development/android_device_oneplus_fairlady-kernel.git \
+              -b lineage-23.2 device/oneplus/fairlady-kernel
+          fi
+          if [ ! -d "hardware/oplus" ]; then
+            git clone https://github.com/OnePlus-SM8850-Development/android_hardware_oplus.git \
+              -b lineage-23.2 hardware/oplus
+          fi
+
+      - name: 下载 OOS 官方包并提取 Vendor Blobs
+        working-directory: ~/android/avium
+        run: |
+          set -e
+
+          echo "=== 清理旧 OOS 包 ==="
+          rm -rf oos_dump
+          mkdir -p oos_dump
+
+          echo "=== 下载官方 OOS 包 ==="
+          aria2c -x 16 -s 16 -d oos_dump -o os.zip "${{ inputs.oos_zip_url }}"
+
+          echo "=== 运行 extract-files.py 提取 Blobs ==="
+          cd device/oneplus/fairlady
+          if [ -f "extract-files.py" ]; then
+            python3 extract-files.py ../../../../oos_dump/os.zip
+          else
+            echo "❌ 设备树中未找到 extract-files.py，请确认设备树分支是否正确。"
+            exit 1
+          fi
+          echo "=== Vendor Blobs 提取完成 ==="
+
+          echo "=== 清理 OOS 包释放空间 ==="
+          rm -f ~/android/avium/oos_dump/os.zip ~/android/avium/oos_dump/os.zip.aria2
+          rmdir ~/android/avium/oos_dump 2>/dev/null || true
+          echo "✅ 已清理，当前磁盘："
+          df -h ~/android/avium
+
+      - name: 验证目录结构
+        working-directory: ~/android/avium
+        run: |
+          DIRS=(
+            "device/oneplus/sm8850-common"
+            "device/oneplus/fairlady"
+            "device/oneplus/fairlady-kernel"
+            "hardware/oplus"
+            "vendor/oneplus/fairlady"
+          )
+          ALL_OK=true
+          for dir in "${DIRS[@]}"; do
+            if [ -d "$dir" ]; then echo "✅ $dir"; else echo "❌ $dir 不存在"; ALL_OK=false; fi
+          done
+          if [ "$ALL_OK" = false ]; then exit 1; fi
+
+      - name: 注入 AviumUI 定制配置
+        working-directory: ~/android/avium
+        run: |
+          set -e
+          MARKER="# === AviumUI custom configs injected by CI ==="
+
+          DEVICE_MK=""
+          for cand in \
+            "device/oneplus/fairlady/avium_${DEVICE}.mk" \
+            "device/oneplus/fairlady/lineage_${DEVICE}.mk" \
+            "device/oneplus/fairlady/${DEVICE}.mk" \
+            "device/oneplus/fairlady/device.mk"; do
+            if [ -f "$cand" ]; then DEVICE_MK="$cand"; break; fi
+          done
+
+          if [ -z "$DEVICE_MK" ]; then
+            echo "❌ 未找到设备专属 mk 文件，无法注入 AviumUI 配置。"
+            echo "device/oneplus/fairlady/ 目录内容："
+            ls -la device/oneplus/fairlady/ || true
+            exit 1
+          fi
+          echo "📌 将注入到: $DEVICE_MK"
+
+          if grep -qF "$MARKER" "$DEVICE_MK"; then
+            LINE=$(grep -nF "$MARKER" "$DEVICE_MK" | head -1 | cut -d: -f1)
+            echo "🧹 清理旧注入块（从第 ${LINE} 行到文件末尾）"
+            sed -i "${LINE},\$d" "$DEVICE_MK"
+          fi
+
+          cat >> "$DEVICE_MK" << EOF
+
+          ${MARKER}
+          AVIUM_VERSION_APPEND_TIME_OF_DAY := ${{ inputs.avium_time_append }}
+          AVIUM_MAINTAINER := ${{ inputs.avium_maintainer }}
+          AVIUM_SETTINGS_SOC_MODEL_NAME := ${{ inputs.avium_soc_model }}
+          AVIUM_SETTINGS_DEVICE_CODENAME := ${DEVICE}
+          WITH_GMS := ${{ inputs.avium_gms }}
+          TARGET_INCLUDE_GOOGLEIME := ${{ inputs.avium_googleime }}
+          TARGET_GOOGLEIME_OVERRIDE_IME := ${{ inputs.avium_googleime }}
+          AVIUM_FORCE_SET_FAKE_PROP := ${{ inputs.avium_spoof }}
+          TARGET_FORCE_ENABLE_BLUR := ${{ inputs.avium_blur }}
+          EOF
+
+          echo "=== 注入后的文件尾部 ==="
+          tail -20 "$DEVICE_MK"
+
+          if [ "${{ inputs.avium_gms }}" = "true" ] && [ "${{ inputs.avium_googleime }}" = "true" ]; then
+            echo "⚠️ WITH_GMS=true 时 TARGET_INCLUDE_GOOGLEIME 不会生效（GMS 构建会使用 GMS 自带的 Google IME）。"
+          fi
+          echo "✅ AviumUI 配置注入完成"
+
+      - name: 开始编译
+        shell: bash
+        working-directory: ~/android/avium
+        run: |
+          export PATH=~/bin:$PATH
+          source build/envsetup.sh
+
+          LUNCH_TARGET="lineage_${DEVICE}-bp4a-${{ inputs.build_type }}"
+          echo "lunch target: ${LUNCH_TARGET}"
+          lunch "${LUNCH_TARGET}" || { echo "❌ lunch 失败，请检查 product 名或 release 代号"; exit 1; }
+
+          m bacon -j$(nproc --all) 2>&1 | tee build.log
+          exit ${PIPESTATUS[0]}
+
+      - name: 收集编译产物
+        if: success()
+        working-directory: ~/android/avium
+        run: |
+          PRODUCT_DIR="out/target/product/${DEVICE}"
+          OUT_DIR="${GITHUB_WORKSPACE}/build-output"
+          rm -rf "$OUT_DIR"
+          mkdir -p "$OUT_DIR"
+
+          cp ${PRODUCT_DIR}/*.zip "$OUT_DIR"/ 2>/dev/null || true
+          cp ${PRODUCT_DIR}/recovery.img "$OUT_DIR"/ 2>/dev/null || true
+          cp ${PRODUCT_DIR}/boot.img "$OUT_DIR"/ 2>/dev/null || true
+
+          cat > "$OUT_DIR/build-info.txt" << EOF
+          AviumUI Build Info
+          ==================
+          Device: ${DEVICE}
+          Branch: ${BRANCH}
+          Build Type: ${{ inputs.build_type }}
+          GMS: ${{ inputs.avium_gms }}
+          Maintainer: ${{ inputs.avium_maintainer }}
+          Build Date: $(date '+%Y-%m-%d %H:%M:%S')
+          EOF
+
+          echo "=== 产物列表 ==="
+          ls -lh "$OUT_DIR"
+
+      - name: 上传编译产物
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: AviumUI-${{ env.DEVICE }}-${{ inputs.build_type }}-${{ github.run_number }}
+          path: build-output/
+          retention-days: 7
+          compression-level: 1
+
+      - name: 编译统计
+        if: always()
+        working-directory: ~/android/avium
+        run: |
+          if [ -f "build.log" ]; then
+            echo "编译日志大小: $(du -h build.log | cut -f1)"
+          fi
+          ccache -s | grep "cache hit" || true
