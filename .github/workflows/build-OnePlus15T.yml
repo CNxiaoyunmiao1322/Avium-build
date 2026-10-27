@@ -25,7 +25,7 @@ on:
       avium_maintainer:
         description: '维护者名称'
         required: false
-        default: 'xiaoyunmiao1322'
+        default: 'CNxiaoyunmiao1322'
         type: string
       avium_soc_model:
         description: 'SoC 显示名'
@@ -112,8 +112,8 @@ jobs:
 
       - name: 配置 Git & ccache
         run: |
-          git config --global user.name "cnxiaoyunmiao1322"
-          git config --global user.email "cnxiaoyunmiao1322@163.com"
+          git config --global user.name "CNxiaoyunmiao1322"
+          git config --global user.email "231906786+CNxiaoyunmiao1322@users.noreply.github.com"
           git lfs install
           ccache -M ${CCACHE_SIZE}
           ccache -z
