@@ -118,7 +118,10 @@ jobs:
             if [ "${{ inputs.enable_mirror }}" = "true" ]; then
               echo "=== 镜像加速已启用，从北京外国语大学开源软件镜像站下载 repo ==="
               export REPO_URL='https://mirrors.bfsu.edu.cn/git/git-repo'
-              curl -L https://mirrors.bfsu.edu.cn/git/git-repo -o ~/bin/repo
+              rm -rf /tmp/git-repo-clone
+              git clone --depth 1 ${REPO_URL} /tmp/git-repo-clone
+              cp /tmp/git-repo-clone/repo ~/bin/repo
+              rm -rf /tmp/git-repo-clone
             else
               echo "=== 镜像加速未启用，从 Google 官方下载 repo ==="
               curl -L https://storage.googleapis.com/git-repo-downloads/repo -o ~/bin/repo
