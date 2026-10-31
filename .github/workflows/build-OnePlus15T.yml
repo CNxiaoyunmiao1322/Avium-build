@@ -116,9 +116,12 @@ jobs:
           mkdir -p ~/bin
           if [ ! -f ~/bin/repo ]; then
             if [ "${{ inputs.enable_mirror }}" = "true" ]; then
-              curl -fsSL https://gh-proxy.com/https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
+              echo "=== 镜像加速已启用，从 GitHub 镜像下载 repo ==="
+              # 使用 gh-proxy 加速 GitHub 上的 repo 脚本镜像
+              curl -fsSL https://gh-proxy.com/https://raw.githubusercontent.com/GerritCodeReview/git-repo/main/repo > ~/bin/repo
             else
-              curl -fsSL https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
+              echo "=== 镜像加速未启用，将直接下载 repo ==="
+              curl -fsSL https://raw.githubusercontent.com/GerritCodeReview/git-repo/main/repo > ~/bin/repo
             fi
             chmod a+x ~/bin/repo
           fi
