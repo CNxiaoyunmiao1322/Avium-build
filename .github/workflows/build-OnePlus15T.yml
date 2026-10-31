@@ -200,6 +200,7 @@ jobs:
           MIRROR_BASE=""
 
           if [ "${{ inputs.enable_mirror }}" = "true" ]; then
+            export REPO_URL='https://mirrors.bfsu.edu.cn/git/git-repo'
             echo "=== 测速选择最优 AOSP 镜像 ==="
             BEST_TIME=9999
             for M in "${MIRROR_TUNA}" "${MIRROR_USTC}" "${MIRROR_ALIYUN}"; do
@@ -228,6 +229,7 @@ jobs:
 
           # AviumUI manifest 本身始终从官方（或 gh-proxy）拉取
           echo "📌 repo init -u ${AVIUM_MANIFEST} -b ${BRANCH}"
+          # 加入 --repo-url 参数，强制 repo 工具从北外镜像拉取自身源码
           repo init -u "$AVIUM_MANIFEST" -b ${BRANCH} --git-lfs
 
           # 仅在 USE_MIRROR=true 时配置 AOSP 子仓库重写
