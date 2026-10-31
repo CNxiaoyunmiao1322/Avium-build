@@ -117,10 +117,10 @@ jobs:
           if [ ! -s ~/bin/repo ]; then
             if [ "${{ inputs.enable_mirror }}" = "true" ]; then
               echo "=== 镜像加速已启用，从清华镜像下载 repo ==="
-              curl -fsSL https://mirrors.tuna.tsinghua.edu.cn/git/git-repo -o ~/bin/repo
+              curl -fsSL -L -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" https://mirrors.tuna.tsinghua.edu.cn/git/git-repo -o ~/bin/repo
             else
               echo "=== 镜像加速未启用，从 Google 官方下载 repo ==="
-              curl -fsSL https://storage.googleapis.com/git-repo-downloads/repo -o ~/bin/repo
+              curl -fsSL -L -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" https://storage.googleapis.com/git-repo-downloads/repo -o ~/bin/repo
             fi
             chmod a+x ~/bin/repo
           fi
