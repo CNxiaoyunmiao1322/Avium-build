@@ -114,31 +114,29 @@ jobs:
       - name: 安装 repo 工具
         run: |
           mkdir -p ~/bin
-          if [ ! -f ~/bin/repo ]; then
+          if [ ! -s ~/bin/repo ]; then
             if [ "${{ inputs.enable_mirror }}" = "true" ]; then
-              echo "=== 镜像加速已启用，从 GitHub 镜像下载 repo ==="
-              # 使用 gh-proxy 加速 GitHub 上的 repo 脚本镜像
-              curl -fsSL https://gh-proxy.com/https://raw.githubusercontent.com/GerritCodeReview/git-repo/main/repo > ~/bin/repo
+              echo "=== 镜像加速已启用，从清华镜像下载 repo ==="
+              curl -fsSL https://mirrors.tuna.tsinghua.edu.cn/git/git-repo/repo -o ~/bin/repo
             else
-              echo "=== 镜像加速未启用，将直接下载 repo ==="
-              curl -fsSL https://raw.githubusercontent.com/GerritCodeReview/git-repo/main/repo > ~/bin/repo
+              echo "=== 镜像加速未启用，从 Google 官方下载 repo ==="
+              curl -fsSL https://storage.googleapis.com/git-repo-downloads/repo -o ~/bin/repo
             fi
             chmod a+x ~/bin/repo
-            if [ ! -x ~/bin/repo ]; then
-              echo "❌ chmod 未生效，尝试使用 install 命令..."
-              install -m 755 ~/bin/repo /usr/local/bin/repo
-            fi
           fi
+
+          # 下载后强制校验：文件必须非空且可执行
+          if [ ! -s ~/bin/repo ]; then
+            echo "❌ repo 下载失败或文件为空"
+            ls -l ~/bin/repo || true
+            exit 1
+          fi
+          if [ ! -x ~/bin/repo ]; then
+            echo "❌ repo 无可执行权限"
+            exit 1
+          fi
+
           export PATH=~/bin:$PATH
-          
-          echo "=== 1. 检查文件详情 ==="
-          ls -l ~/bin/repo
-          file ~/bin/repo
-          echo "=== 2. 检查文件系统挂载选项 (关键) ==="
-          findmnt -no OPTIONS --target ~/bin/repo | tr ',' '\n' | grep -i noexec || echo "挂载选项正常，未发现 noexec"
-          echo "=== 3. 检查行尾符 (CRLF 是隐藏杀手) ==="
-          head -n 1 ~/bin/repo | cat -A
-          
           repo --version
 
       - name: 配置 Git & ccache
