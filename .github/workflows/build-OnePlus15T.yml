@@ -116,11 +116,12 @@ jobs:
           mkdir -p ~/bin
           if [ ! -s ~/bin/repo ]; then
             if [ "${{ inputs.enable_mirror }}" = "true" ]; then
-              echo "=== 镜像加速已启用，从清华镜像下载 repo ==="
-              curl -fsSL -L -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" https://mirrors.tuna.tsinghua.edu.cn/git/git-repo -o ~/bin/repo
+              echo "=== 镜像加速已启用，从北京外国语大学开源软件镜像站下载 repo ==="
+              export REPO_URL='https://mirrors.bfsu.edu.cn/git/git-repo'
+              curl -L https://mirrors.bfsu.edu.cn/git/git-repo -o repo
             else
               echo "=== 镜像加速未启用，从 Google 官方下载 repo ==="
-              curl -fsSL -L -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" https://storage.googleapis.com/git-repo-downloads/repo -o ~/bin/repo
+              curl -L https://storage.googleapis.com/git-repo-downloads/repo -o ~/bin/repo
             fi
             chmod a+x ~/bin/repo
           fi
@@ -137,6 +138,7 @@ jobs:
           fi
 
           export PATH=~/bin:$PATH
+          
           repo --version
 
       - name: 配置 Git & ccache
