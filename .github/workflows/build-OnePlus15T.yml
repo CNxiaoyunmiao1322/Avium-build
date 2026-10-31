@@ -124,8 +124,21 @@ jobs:
               curl -fsSL https://raw.githubusercontent.com/GerritCodeReview/git-repo/main/repo > ~/bin/repo
             fi
             chmod a+x ~/bin/repo
+            if [ ! -x ~/bin/repo ]; then
+              echo "❌ chmod 未生效，尝试使用 install 命令..."
+              install -m 755 ~/bin/repo /usr/local/bin/repo
+            fi
           fi
           export PATH=~/bin:$PATH
+          
+          echo "=== 1. 检查文件详情 ==="
+          ls -l ~/bin/repo
+          file ~/bin/repo
+          echo "=== 2. 检查文件系统挂载选项 (关键) ==="
+          findmnt -no OPTIONS --target ~/bin/repo | tr ',' '\n' | grep -i noexec || echo "挂载选项正常，未发现 noexec"
+          echo "=== 3. 检查行尾符 (CRLF 是隐藏杀手) ==="
+          head -n 1 ~/bin/repo | cat -A
+          
           repo --version
 
       - name: 配置 Git & ccache
