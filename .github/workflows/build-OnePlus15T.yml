@@ -114,46 +114,56 @@ jobs:
       - name: 安装 repo 工具
         run: |
           set -euo pipefail
-          mkdir -p ~/bin
+          mkdir -p "$HOME/bin"
 
+          ENABLE_MIRROR="${{ inputs.enable_mirror }}"
           MIRROR_REPO_URL='https://mirrors.bfsu.edu.cn/git/git-repo'
-          MIRROR_REPO_RAW='https://mirrors.bfsu.edu.cn/git/git-repo/plain/repo'
           GOOGLE_REPO_URL='https://storage.googleapis.com/git-repo-downloads/repo'
 
+          # 判断是否为有效的 repo 脚本：非空且首行是 shebang
           is_valid_repo() {
-            [ -s ~/bin/repo ] && head -n1 ~/bin/repo | grep -q '^#!'
+            [ -s "$HOME/bin/repo" ] && head -n1 "$HOME/bin/repo" | grep -q '^#!'
           }
 
-          download() {
+          # 下载并校验，失败返回非零
+          download_repo() {
             local url="$1"
-            echo "尝试下载: $url"
-            rm -f ~/bin/repo
-            curl -fsSL "$url" -o ~/bin/repo || return 1
+            echo "尝试下载 repo: $url"
+            rm -f "$HOME/bin/repo"
+            if ! curl -fsSL --retry 3 --retry-delay 2 "$url" -o "$HOME/bin/repo"; then
+              return 1
+            fi
             is_valid_repo
           }
 
           if ! is_valid_repo; then
-            if [ "${{ inputs.enable_mirror }}" = "true" ]; then
-              echo "=== 镜像加速已启用 ==="
+            if [ "$ENABLE_MIRROR" = "true" ]; then
+              echo "=== 镜像加速已启用，从北外镜像站下载 repo ==="
               export REPO_URL="$MIRROR_REPO_URL"
-              if ! download "$MIRROR_REPO_RAW"; then
+              if ! download_repo "$MIRROR_REPO_URL"; then
                 echo "❌ 镜像下载失败或内容异常，回退 Google 官方"
-                download "$GOOGLE_REPO_URL" || { echo "❌ Google 官方也失败"; exit 1; }
+                download_repo "$GOOGLE_REPO_URL" || { echo "❌ Google 官方下载也失败"; exit 1; }
               fi
             else
-              echo "=== 从 Google 官方下载 ==="
-              download "$GOOGLE_REPO_URL" || { echo "❌ 下载失败"; exit 1; }
+              echo "=== 镜像加速未启用，从 Google 官方下载 repo ==="
+              download_repo "$GOOGLE_REPO_URL" || { echo "❌ 下载失败"; exit 1; }
             fi
+          else
+            echo "=== 已存在有效的 ~/bin/repo，跳过下载 ==="
           fi
 
-          chmod +x ~/bin/repo
+          # 统一赋权，已存在但无执行权限的情况也能修复
+          chmod +x "$HOME/bin/repo"
 
           # 最终强校验
           if ! is_valid_repo; then
-            echo "❌ repo 内容异常（非脚本）"; head -n 5 ~/bin/repo || true; exit 1
+            echo "❌ ~/bin/repo 内容异常，前 5 行如下："
+            head -n 5 "$HOME/bin/repo" || true
+            exit 1
           fi
-          if [ ! -x ~/bin/repo ]; then
-            echo "❌ repo 无执行权限"; exit 1
+          if [ ! -x "$HOME/bin/repo" ]; then
+            echo "❌ repo 无可执行权限"
+            exit 1
           fi
 
           export PATH="$HOME/bin:$PATH"
@@ -168,7 +178,6 @@ jobs:
           ccache -z
 
       - name: 同步 AviumUI 源码
-        working-directory: ~/android/avium
         run: |
           export PATH=~/bin:$PATH
           mkdir -p ~/android/avium
@@ -237,8 +246,9 @@ jobs:
           repo sync -c -j${JOBS} --force-sync --no-clone-bundle --no-tags
 
       - name: 克隆 fairlady 设备树 & 内核 & 通用树
-        working-directory: ~/android/avium
         run: |
+          mkdir -p ~/android/avium
+          cd ~/android/avium
           # 根据开关决定是否加 gh-proxy 前缀
           if [ "${{ inputs.enable_mirror }}" = "true" ]; then
             GIT_PREFIX="https://gh-proxy.com/"
@@ -264,8 +274,9 @@ jobs:
           fi
 
       - name: 下载 OOS 官方包并提取 Vendor Blobs
-        working-directory: ~/android/avium
         run: |
+          mkdir -p ~/android/avium
+          cd ~/android/avium
           set -e
 
           echo "=== 清理旧 OOS 包 ==="
@@ -292,8 +303,8 @@ jobs:
           df -h ~/android/avium
 
       - name: 验证目录结构
-        working-directory: ~/android/avium
         run: |
+          cd ~/android/avium
           DIRS=(
             "device/oneplus/sm8850-common"
             "device/oneplus/fairlady"
@@ -308,8 +319,8 @@ jobs:
           if [ "$ALL_OK" = false ]; then exit 1; fi
 
       - name: 注入 AviumUI 定制配置
-        working-directory: ~/android/avium
         run: |
+          cd ~/android/avium
           set -e
           MARKER="# === AviumUI custom configs injected by CI ==="
 
@@ -360,8 +371,8 @@ jobs:
 
       - name: 开始编译
         shell: bash
-        working-directory: ~/android/avium
         run: |
+          cd ~/android/avium
           export PATH=~/bin:$PATH
           source build/envsetup.sh
 
@@ -374,8 +385,8 @@ jobs:
 
       - name: 收集编译产物
         if: success()
-        working-directory: ~/android/avium
         run: |
+          cd ~/android/avium
           PRODUCT_DIR="out/target/product/${DEVICE}"
           OUT_DIR="${GITHUB_WORKSPACE}/build-output"
           rm -rf "$OUT_DIR"
@@ -410,8 +421,8 @@ jobs:
 
       - name: 编译统计
         if: always()
-        working-directory: ~/android/avium
         run: |
+          cd ~/android/avium
           if [ -f "build.log" ]; then
             echo "编译日志大小: $(du -h build.log | cut -f1)"
           fi
