@@ -3,10 +3,11 @@ name: Build AviumUI (fairlady)
 on:
   workflow_dispatch:
     inputs:
+      # ===== 基础配置 =====
       clean_build:
         description: '完全清理后重新编译'
         required: false
-        default: 'false'
+        default: false
         type: boolean
       oos_zip_url:
         description: 'OnePlus 15T 官方 OOS 卡刷包直链 (用于提取 Vendor Blobs)'
@@ -18,9 +19,15 @@ on:
         default: 'userdebug'
         type: choice
         options:
-          - userdebug
           - user
+          - userdebug
           - eng
+      # ===== 镜像加速 =====
+      enable_mirror:
+        description: '启用镜像加速'
+        required: false
+        default: true
+        type: boolean
       # ===== AviumUI 特殊配置 =====
       avium_maintainer:
         description: '维护者名称'
@@ -64,6 +71,10 @@ env:
   USE_CCACHE: 1
   CCACHE_SIZE: 55G
   TZ: Asia/Shanghai
+  # 镜像站 manifest 地址
+  MIRROR_TUNA: "https://mirrors.tuna.tsinghua.edu.cn/git/AOSP/platform/manifest"
+  MIRROR_USTC: "https://mirrors.ustc.edu.cn/aosp/platform/manifest"
+  MIRROR_ALIYUN: "https://mirrors.aliyun.com/aosp/platform/manifest"
 
 jobs:
   build:
@@ -104,7 +115,11 @@ jobs:
         run: |
           mkdir -p ~/bin
           if [ ! -f ~/bin/repo ]; then
-            curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
+            if [ "${{ inputs.enable_mirror }}" = "true" ]; then
+              curl -fsSL https://gh-proxy.com/https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
+            else
+              curl -fsSL https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
+            fi
             chmod a+x ~/bin/repo
           fi
           export PATH=~/bin:$PATH
@@ -124,30 +139,93 @@ jobs:
           export PATH=~/bin:$PATH
           mkdir -p ~/android/avium
           cd ~/android/avium
-          if [ -d ".repo" ]; then
-            repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags --optimized-fetch || true
-          else
-            repo init -u https://github.com/AviumUI/android_manifests -b ${BRANCH} --git-lfs
-            repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags
+
+          AVIUM_MANIFEST="https://github.com/AviumUI/android_manifests"
+          if [ "${{ inputs.enable_mirror }}" = "true" ]; then
+            AVIUM_MANIFEST="https://gh-proxy.com/https://github.com/AviumUI/android_manifests"
           fi
+
+          # 增量同步：沿用 .repo 里记录的 manifest URL，无需重新 init
+          if [ -d ".repo" ]; then
+            echo "=== 增量同步源码 ==="
+            repo sync -c -j4 --force-sync --no-clone-bundle --no-tags --optimized-fetch || true
+            exit 0
+          fi
+
+          # ===== 首次同步 =====
+          USE_MIRROR=false
+          MIRROR_BASE=""
+
+          if [ "${{ inputs.enable_mirror }}" = "true" ]; then
+            echo "=== 测速选择最优 AOSP 镜像 ==="
+            BEST_TIME=9999
+            for M in "${MIRROR_TUNA}" "${MIRROR_USTC}" "${MIRROR_ALIYUN}"; do
+              echo -n "测速: $M ... "
+              TIME=$(curl -o /dev/null -s -w "%{time_total}" --connect-timeout 5 --max-time 10 "$M" 2>/dev/null || echo "9999")
+              echo "${TIME}s"
+              if (( $(echo "$TIME < $BEST_TIME" | bc -l) )); then
+                BEST_TIME=$TIME
+                MIRROR_BASE=$(echo "$M" | sed 's|/platform/manifest$||')
+              fi
+            done
+
+            if [ -n "$MIRROR_BASE" ] && [ "$(echo "$BEST_TIME < 5" | bc -l)" = "1" ]; then
+              echo "✅ 最优镜像: ${MIRROR_BASE} (${BEST_TIME}s)，用于 insteadOf 重写"
+              USE_MIRROR=true
+            else
+              echo "⚠️ 镜像站均超时或响应过慢，不启用 insteadOf 重写"
+              MIRROR_BASE=""
+            fi
+          else
+            echo "=== 镜像加速未启用 ==="
+          fi
+
+          # 始终先清理旧的 insteadOf，避免上次运行残留
+          git config --global --unset-all url."https://android.googlesource.com/".insteadOf 2>/dev/null || true
+
+          # AviumUI manifest 本身始终从官方（或 gh-proxy）拉取
+          echo "📌 repo init -u ${AVIUM_MANIFEST} -b ${BRANCH}"
+          repo init -u "$AVIUM_MANIFEST" -b ${BRANCH} --git-lfs
+
+          # 仅在 USE_MIRROR=true 时配置 AOSP 子仓库重写
+          if [ "$USE_MIRROR" = "true" ]; then
+            git config --global url."${MIRROR_BASE}/".insteadOf "https://android.googlesource.com/"
+            echo "✅ 已配置: https://android.googlesource.com/ -> ${MIRROR_BASE}/"
+          fi
+
+          # 镜像启用时 -j4 符合镜像站并发限制；未启用时可用全核
+          if [ "$USE_MIRROR" = "true" ]; then
+            JOBS=4
+          else
+            JOBS=$(nproc --all)
+          fi
+          echo "📌 repo sync -j${JOBS}"
+          repo sync -c -j${JOBS} --force-sync --no-clone-bundle --no-tags
 
       - name: 克隆 fairlady 设备树 & 内核 & 通用树
         working-directory: ~/android/avium
         run: |
+          # 根据开关决定是否加 gh-proxy 前缀
+          if [ "${{ inputs.enable_mirror }}" = "true" ]; then
+            GIT_PREFIX="https://gh-proxy.com/"
+          else
+            GIT_PREFIX=""
+          fi
+
           if [ ! -d "device/oneplus/sm8850-common" ]; then
-            git clone https://github.com/OnePlus-SM8850-Development/android_device_oneplus_sm8850-common.git \
+            git clone ${GIT_PREFIX}https://github.com/OnePlus-SM8850-Development/android_device_oneplus_sm8850-common.git \
               -b lineage-23.2-osskernel device/oneplus/sm8850-common
           fi
           if [ ! -d "device/oneplus/fairlady" ]; then
-            git clone https://github.com/OnePlus-SM8850-Development/android_device_oneplus_fairlady.git \
+            git clone ${GIT_PREFIX}https://github.com/OnePlus-SM8850-Development/android_device_oneplus_fairlady.git \
               -b lineage-23.2 device/oneplus/fairlady
           fi
           if [ ! -d "device/oneplus/fairlady-kernel" ]; then
-            git clone https://github.com/OnePlus-SM8850-Development/android_device_oneplus_fairlady-kernel.git \
+            git clone ${GIT_PREFIX}https://github.com/OnePlus-SM8850-Development/android_device_oneplus_fairlady-kernel.git \
               -b lineage-23.2 device/oneplus/fairlady-kernel
           fi
           if [ ! -d "hardware/oplus" ]; then
-            git clone https://github.com/OnePlus-SM8850-Development/android_hardware_oplus.git \
+            git clone ${GIT_PREFIX}https://github.com/OnePlus-SM8850-Development/android_hardware_oplus.git \
               -b lineage-23.2 hardware/oplus
           fi
 
