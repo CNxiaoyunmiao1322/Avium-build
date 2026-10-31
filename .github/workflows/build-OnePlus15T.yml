@@ -113,35 +113,50 @@ jobs:
 
       - name: 安装 repo 工具
         run: |
+          set -euo pipefail
           mkdir -p ~/bin
-          if [ ! -s ~/bin/repo ]; then
+
+          MIRROR_REPO_URL='https://mirrors.bfsu.edu.cn/git/git-repo'
+          MIRROR_REPO_RAW='https://mirrors.bfsu.edu.cn/git/git-repo/plain/repo'
+          GOOGLE_REPO_URL='https://storage.googleapis.com/git-repo-downloads/repo'
+
+          is_valid_repo() {
+            [ -s ~/bin/repo ] && head -n1 ~/bin/repo | grep -q '^#!'
+          }
+
+          download() {
+            local url="$1"
+            echo "尝试下载: $url"
+            rm -f ~/bin/repo
+            curl -fsSL "$url" -o ~/bin/repo || return 1
+            is_valid_repo
+          }
+
+          if ! is_valid_repo; then
             if [ "${{ inputs.enable_mirror }}" = "true" ]; then
-              echo "=== 镜像加速已启用，从北京外国语大学开源软件镜像站下载 repo ==="
-              export REPO_URL='https://mirrors.bfsu.edu.cn/git/git-repo'
-              rm -rf /tmp/git-repo-clone
-              git clone --depth 1 ${REPO_URL} /tmp/git-repo-clone
-              cp /tmp/git-repo-clone/repo ~/bin/repo
-              rm -rf /tmp/git-repo-clone
+              echo "=== 镜像加速已启用 ==="
+              export REPO_URL="$MIRROR_REPO_URL"
+              if ! download "$MIRROR_REPO_RAW"; then
+                echo "❌ 镜像下载失败或内容异常，回退 Google 官方"
+                download "$GOOGLE_REPO_URL" || { echo "❌ Google 官方也失败"; exit 1; }
+              fi
             else
-              echo "=== 镜像加速未启用，从 Google 官方下载 repo ==="
-              curl -L https://storage.googleapis.com/git-repo-downloads/repo -o ~/bin/repo
+              echo "=== 从 Google 官方下载 ==="
+              download "$GOOGLE_REPO_URL" || { echo "❌ 下载失败"; exit 1; }
             fi
-            chmod +x ~/bin/repo
           fi
 
-          # 下载后强制校验：文件必须非空且可执行
-          if [ ! -s ~/bin/repo ]; then
-            echo "❌ repo 下载失败或文件为空"
-            ls -l ~/bin/repo || true
-            exit 1
+          chmod +x ~/bin/repo
+
+          # 最终强校验
+          if ! is_valid_repo; then
+            echo "❌ repo 内容异常（非脚本）"; head -n 5 ~/bin/repo || true; exit 1
           fi
           if [ ! -x ~/bin/repo ]; then
-            echo "❌ repo 无可执行权限"
-            exit 1
+            echo "❌ repo 无执行权限"; exit 1
           fi
 
-          export PATH=~/bin:$PATH
-          
+          export PATH="$HOME/bin:$PATH"
           repo --version
 
       - name: 配置 Git & ccache
