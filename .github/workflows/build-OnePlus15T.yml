@@ -123,7 +123,7 @@ jobs:
               echo "=== 镜像加速未启用，从 Google 官方下载 repo ==="
               curl -L https://storage.googleapis.com/git-repo-downloads/repo -o ~/bin/repo
             fi
-            chmod a+x ~/bin/repo
+            chmod +x ~/bin/repo
           fi
 
           # 下载后强制校验：文件必须非空且可执行
